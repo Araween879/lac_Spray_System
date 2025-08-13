@@ -1,288 +1,203 @@
--- =======================================
--- 📄 FILE: client/ui/spray_menu.lua
--- 🔌 STEP: STEP 7 — ITEM-ONLY SYSTEM + REMOVER
--- ✅ KOMPLETT ÜBERARBEITET: Nur Item-basiert + Entferner-System
--- VERSION: 2.0.0 - FIXED SYNTAX ERRORS
--- =======================================
+-- ✅ GEFIXT: Gang Spray Menu System - Vollständig reparierte Version
+-- Datei: client/ui/spray_menu.lua
 
--- Local Variables
 local QBCore = exports['qb-core']:GetCoreObject()
+local lib = exports.ox_lib
 
-SprayMenu = SprayMenu or {
+-- ✅ FIX: SprayMenu Class mit verbessertem State Management
+SprayMenu = {
     isOpen = false,
-    currentMenu = nil,
-    menuHistory = {},
+    nuiFocusActive = false,
+    overlayPreventionActive = false,
+    isRemovalMode = false,
+    currentAccess = nil,
     playerGang = nil,
     playerGrade = 0,
-    nuiFocusActive = false,           -- Track NUI focus state
-    overlayPreventionActive = false, -- Prevent unwanted overlays
-    currentAccess = {},              -- ✅ NEU: Current access metadata from item
-    isRemovalMode = false,           -- ✅ NEU: Entferner-Modus
-    removalMetadata = {}             -- ✅ NEU: Entferner-Metadata
+    lastMenuOpenTime = 0,
+    menuCooldown = 500, -- Anti-spam protection
+    
+    -- Debug & Performance
+    debugMode = Config.Debug and Config.Debug.enabled or false,
+    performanceMode = false
 }
 
--- Initialisierung
+-- ✅ FIX: Initialisierung mit verbesserter Error Handling
 function SprayMenu:Initialize()
-    Debug:Log("MENU", "Initializing item-only spray menu system", nil, "INFO")
+    -- Player Data laden
+    self:RefreshPlayerData()
     
-    -- Hole Gang-Informationen
-    self:UpdatePlayerGang()
+    -- Event Listeners registrieren
+    self:RegisterEventHandlers()
     
-    -- Event Listeners
-    self:RegisterEvents()
-    
-    -- Overlay Prevention System
-    self:InitializeOverlayPrevention()
-    
-    Debug:Log("MENU", "Item-only spray menu system initialized", nil, "SUCCESS")
-end
-
--- Overlay Prevention System
-function SprayMenu:InitializeOverlayPrevention()
-    CreateThread(function()
-        while true do
-            Wait(500) -- Check every 500ms
-            
-            -- Prüfe ob NUI Focus aktiv ist aber Menu geschlossen
-            if self.nuiFocusActive and not self.isOpen then
-                Debug:Log("MENU", "Detected orphaned NUI focus - cleaning up", nil, "WARN")
-                self:ForceCloseNUI()
-            end
-            
-            -- Gang-Änderungen überwachen
-            if self.overlayPreventionActive then
-                local currentGang = self:GetCurrentPlayerGang()
-                if currentGang ~= self.playerGang then
-                    Debug:Log("MENU", "Gang change detected during overlay", {
-                        old = self.playerGang,
-                        new = currentGang
-                    }, "INFO")
-                    self:HandleGangChange(currentGang)
-                end
-            end
-        end
-    end)
-end
-
--- Force close NUI when orphaned
-function SprayMenu:ForceCloseNUI()
-    SetNuiFocus(false, false)
-    self.nuiFocusActive = false
-    self.isOpen = false
-    self.overlayPreventionActive = false
-    self.isRemovalMode = false
-    
-    -- Send cleanup message to NUI
-    SendNUIMessage({
-        type = 'forceCloseAll'
-    })
-    
-    Debug:Log("MENU", "Force closed orphaned NUI", nil, "INFO")
-end
-
--- Handle gang changes during UI operations
-function SprayMenu:HandleGangChange(newGang)
-    self.playerGang = newGang
-    
-    -- Close any open UIs immediately
-    if self.isOpen then
-        self:ForceCloseNUI()
-        
-        lib.notify({
-            title = 'Gang-System',
-            description = 'Gang-Zugehörigkeit geändert - UI wurde geschlossen',
-            type = 'info'
-        })
-    end
-end
-
--- Improved player gang detection
-function SprayMenu:GetCurrentPlayerGang()
-    local PlayerData = QBCore.Functions.GetPlayerData()
-    
-    if PlayerData and PlayerData.gang and PlayerData.gang.name ~= 'none' then
-        return PlayerData.gang.name
+    -- Performance Monitoring
+    if self.debugMode then
+        self:StartPerformanceMonitoring()
     end
     
-    return nil
+    Debug:Log("MENU", "Spray menu system initialized", {
+        gang = self.playerGang,
+        grade = self.playerGrade,
+        debugMode = self.debugMode
+    }, "SUCCESS")
 end
 
--- Player Gang aktualisieren
-function SprayMenu:UpdatePlayerGang()
+-- ✅ FIX: Player Data Refresh
+function SprayMenu:RefreshPlayerData()
     local PlayerData = QBCore.Functions.GetPlayerData()
     
-    if PlayerData and PlayerData.gang then
-        self.playerGang = PlayerData.gang.name
-        self.playerGrade = PlayerData.gang.grade.level or 0
+    if PlayerData then
+        self.playerGang = PlayerData.gang and PlayerData.gang.name or nil
+        self.playerGrade = PlayerData.gang and PlayerData.gang.grade.level or 0
         
-        Debug:Log("MENU", "Player gang updated", {
+        Debug:Log("MENU", "Player data refreshed", {
             gang = self.playerGang,
             grade = self.playerGrade
         }, "INFO")
     else
-        self.playerGang = nil
-        self.playerGrade = 0
-        
-        Debug:Log("MENU", "No gang data found for player", nil, "WARN")
+        Debug:Log("MENU", "Failed to get player data", nil, "WARN")
     end
 end
 
--- Event Registration
-function SprayMenu:RegisterEvents()
-    -- ✅ NEU: Item-basierte Aktivierung (HAUPT-EVENT)
-    RegisterNetEvent('spray:client:openSprayMenu', function(metadata)
-        if SprayMenu.isOpen or SprayMenu.overlayPreventionActive then 
-            return 
-        end
-        
-        -- Setze Metadata für aktuellen Zugriff
-        SprayMenu.currentAccess = metadata or {}
-        SprayMenu:OpenMainMenu()
+-- ✅ FIX: Event Handlers registrieren
+function SprayMenu:RegisterEventHandlers()
+    -- Player Data Update
+    RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+        Wait(2000) -- Warte bis alle Systeme geladen sind
+        self:RefreshPlayerData()
     end)
     
-    -- ✅ NEU: Entferner-Modus aktivieren
-    RegisterNetEvent('spray:client:activateRemovalMode', function(metadata)
-        SprayMenu.removalMetadata = metadata or {}
-        SprayMenu:StartRemovalMode()
+    RegisterNetEvent('QBCore:Client:OnGangUpdate', function()
+        self:RefreshPlayerData()
     end)
     
-    -- Gang Update Event
-    RegisterNetEvent('QBCore:Client:OnGangUpdate', function(GangInfo)
-        local oldGang = SprayMenu.playerGang
-        
-        if GangInfo then
-            SprayMenu.playerGang = GangInfo.name
-            SprayMenu.playerGrade = GangInfo.grade.level or 0
-        else
-            SprayMenu.playerGang = nil
-            SprayMenu.playerGrade = 0
-        end
-        
-        -- Close UI if gang changed while open
-        if oldGang ~= SprayMenu.playerGang and SprayMenu.isOpen then
-            Debug:Log("MENU", "Gang changed while UI open - force closing", {
-                oldGang = oldGang,
-                newGang = SprayMenu.playerGang
-            }, "INFO")
-            
-            SprayMenu:ForceCloseNUI()
-            
-            lib.notify({
-                title = 'Gang-System',
-                description = 'Gang-Zugehörigkeit geändert',
-                type = 'info'
-            })
-        end
-    end)
-    
-    -- Player Logout Event - Cleanup NUI
-    RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
-        if SprayMenu.isOpen then
-            SprayMenu:ForceCloseNUI()
-        end
-    end)
-    
-    -- Spray Editor Results
-    RegisterNetEvent('spray:client:editorResult', function(result)
-        if result.success then
-            lib.notify({
-                title = 'Spray Editor',
-                description = result.message or 'Aktion erfolgreich',
-                type = 'success'
-            })
-        else
-            lib.notify({
-                title = 'Spray Editor',
-                description = result.error or 'Ein Fehler ist aufgetreten',
-                type = 'error'
-            })
-        end
-    end)
-    
-    -- Template Results
-    RegisterNetEvent('spray:client:templateResult', function(result)
-        if result.success then
-            lib.notify({
-                title = 'Template',
-                description = result.message or 'Template ausgewählt',
-                type = 'success'
-            })
-        else
-            lib.notify({
-                title = 'Template',
-                description = result.error or 'Template-Fehler',
-                type = 'error'
-            })
-        end
-    end)
-    
-    -- URL Results
-    RegisterNetEvent('spray:client:urlResult', function(result)
-        if result.success then
-            lib.notify({
-                title = 'URL-Bild',
-                description = result.message or 'URL-Bild wird verwendet',
-                type = 'success'
-            })
-        else
-            lib.notify({
-                title = 'URL-Bild',
-                description = result.error or 'URL-Fehler',
-                type = 'error'
-            })
-        end
-    end)
-    
-    -- Placement Start Event
-    RegisterNetEvent('spray:client:startPlacement', function(sprayData, placementMode)
-        -- Ensure clean close before placement
-        if SprayMenu.isOpen then
-            lib.hideContext()
-            SprayMenu:ForceCloseNUI()
-        end
-        
-        -- Start placement mode
-        CreateThread(function()
-            Wait(100) -- Short delay for clean transition
-            
-            if placementMode == 'gizmo' then
-                TriggerEvent('spray:client:startGizmoPlacement', sprayData)
-            else
-                TriggerEvent('spray:client:startManualPlacement', sprayData)
-            end
-        end)
-    end)
-    
-    -- ✅ NEU: Player Sprays Response
+    -- Spray System Events
     RegisterNetEvent('spray:client:receivePlayerSprays', function(sprays)
-        SprayMenu:ShowPlayerSpraysMenu(sprays)
+        self:ShowPlayerSpraysMenu(sprays)
+    end)
+    
+    RegisterNetEvent('spray:client:receiveSystemStats', function(stats)
+        self:ShowSystemStats(stats)
+    end)
+    
+    -- NUI Callbacks
+    self:RegisterNUICallbacks()
+    
+    Debug:Log("MENU", "Event handlers registered", nil, "INFO")
+end
+
+-- ✅ FIX: NUI Callbacks mit verbesserter Error Handling
+function SprayMenu:RegisterNUICallbacks()
+    -- Editor schließen
+    RegisterNUICallback('closeEditor', function(data, cb)
+        self:SafeDeactivateNUI()
+        cb('ok')
+        Debug:Log("MENU", "Editor closed via NUI callback", nil, "INFO")
+    end)
+    
+    -- Spray Design speichern
+    RegisterNUICallback('saveSprayDesign', function(data, cb)
+        self:SafeDeactivateNUI()
+        
+        if data and data.imageData then
+            TriggerServerEvent('spray:server:saveSprayDesign', data)
+            Debug:Log("MENU", "Spray design saved", {
+                hasImageData = data.imageData ~= nil,
+                gang = data.gang
+            }, "INFO")
+        else
+            Debug:Log("MENU", "Invalid spray design data", data, "ERROR")
+        end
+        
+        cb('ok')
+    end)
+    
+    -- Template verwenden
+    RegisterNUICallback('useTemplate', function(data, cb)
+        self:SafeDeactivateNUI()
+        
+        if data and data.templateId then
+            TriggerServerEvent('spray:server:useTemplate', data)
+            Debug:Log("MENU", "Template selected", {
+                templateId = data.templateId
+            }, "INFO")
+        else
+            Debug:Log("MENU", "Invalid template data", data, "ERROR")
+        end
+        
+        cb('ok')
+    end)
+    
+    -- URL Bild verwenden
+    RegisterNUICallback('useUrlImage', function(data, cb)
+        self:SafeDeactivateNUI()
+        
+        if data and data.imageUrl then
+            TriggerServerEvent('spray:server:useUrlImage', data)
+            Debug:Log("MENU", "URL image selected", {
+                url = data.imageUrl
+            }, "INFO")
+        else
+            Debug:Log("MENU", "Invalid URL image data", data, "ERROR")
+        end
+        
+        cb('ok')
+    end)
+    
+    -- Template Modal schließen
+    RegisterNUICallback('closeTemplate', function(data, cb)
+        -- Kein NUI deactivate hier, nur Modal schließen
+        Debug:Log("MENU", "Template modal closed", nil, "INFO")
+        cb('ok')
+    end)
+    
+    -- URL Input Modal schließen
+    RegisterNUICallback('closeUrlInput', function(data, cb)
+        -- Kein NUI deactivate hier, nur Modal schließen
+        Debug:Log("MENU", "URL input modal closed", nil, "INFO")
+        cb('ok')
     end)
 end
 
--- ✅ GEÄNDERT: Hauptmenü öffnen (nur noch Item-basiert)
-function SprayMenu:OpenMainMenu()
-    -- Prevent opening if already open or if overlay prevention active
-    if self.isOpen or self.overlayPreventionActive then 
-        Debug:Log("MENU", "Menu open blocked - already open or overlay prevention active", nil, "WARN")
-        return 
+-- ✅ FIX: Main Menu mit Item-basiertem Access
+function SprayMenu:OpenMainMenu(itemData)
+    -- Cooldown prüfen
+    local currentTime = GetGameTimer()
+    if currentTime - self.lastMenuOpenTime < self.menuCooldown then
+        Debug:Log("MENU", "Menu open blocked by cooldown", nil, "WARN")
+        return
+    end
+    self.lastMenuOpenTime = currentTime
+    
+    -- Clean State sicherstellen
+    if self.nuiFocusActive then
+        self:SafeDeactivateNUI()
+        Wait(100)
     end
     
-    -- ✅ Item-basierte Validierung (ersetzt Gang-Validation)
+    -- ✅ FIX: Item-basierte Access Validierung
+    if itemData then
+        self.currentAccess = itemData
+    else
+        Debug:Log("MENU", "No item data provided for menu access", nil, "ERROR")
+        return
+    end
+    
     local accessValidation = self:ValidateItemAccess()
     if not accessValidation.allowed then
         self:ShowAccessError(accessValidation.reason)
         return
     end
     
+    -- Menu State setzen
     self.isOpen = true
     self.overlayPreventionActive = true
-    self.menuHistory = {}
     
-    -- ✅ Dynamisches Menü basierend auf Access-Type
+    -- Menu Options basierend auf Access Type
     local options = {}
     local sprayType = self.currentAccess.sprayType or "public"
     local menuTitle = sprayType == "public" and "🎨 Öffentliches Spray-System" or "🎨 Gang Spray System"
     
+    -- ✅ FIX: Custom Editor Option
     table.insert(options, {
         title = '🎨 Custom Editor',
         description = 'Erstelle ein einzigartiges Spray-Design',
@@ -292,6 +207,7 @@ function SprayMenu:OpenMainMenu()
         end
     })
     
+    -- ✅ FIX: Templates Option
     table.insert(options, {
         title = '📋 Templates',
         description = sprayType == "public" and 'Wähle aus öffentlichen Templates' or 'Wähle aus Gang-Templates',
@@ -301,6 +217,7 @@ function SprayMenu:OpenMainMenu()
         end
     })
     
+    -- ✅ FIX: URL-Bild Option
     table.insert(options, {
         title = '🔗 URL-Bild',
         description = 'Verwende ein Bild von einer URL',
@@ -310,6 +227,7 @@ function SprayMenu:OpenMainMenu()
         end
     })
     
+    -- ✅ FIX: Meine Sprays Option
     table.insert(options, {
         title = '📊 Meine Sprays',
         description = 'Verwalte deine erstellten Sprays',
@@ -331,21 +249,218 @@ function SprayMenu:OpenMainMenu()
         })
     end
     
+    -- ✅ FIX: Context Menu mit verbessertem Exit Handler
     lib.registerContext({
         id = 'spray_main_menu',
         title = menuTitle,
         canClose = true,
         options = options,
-        onExit = function() -- Handle menu close properly
+        onExit = function()
             self.isOpen = false
             self.overlayPreventionActive = false
+            Debug:Log("MENU", "Main menu closed", nil, "INFO")
         end
     })
     
     lib.showContext('spray_main_menu')
+    
+    Debug:Log("MENU", "Main menu opened", {
+        sprayType = sprayType,
+        optionsCount = #options,
+        accessType = self.currentAccess.sprayType
+    }, "INFO")
 end
 
--- ✅ NEU: Item-basierte Access-Validierung (ersetzt Gang-Validation)
+-- ✅ FIX: Custom Editor öffnen mit korrektem NUI Focus
+function SprayMenu:OpenCustomEditor()
+    lib.hideContext()
+    
+    CreateThread(function()
+        Wait(150) -- Längerer Delay für smooth transition
+        
+        -- ✅ FIX: Safe NUI activation
+        self:SafeActivateNUI()
+        
+        -- Gang-Farben vorbereiten
+        local gangColors = self:GetGangColors()
+        
+        -- ✅ FIX: Editor öffnen mit korrekten Parametern
+        SendNUIMessage({
+            type = 'openSprayEditor',
+            gang = self.playerGang,
+            gangColors = gangColors,
+            accessType = self.currentAccess.sprayType,
+            visible = true,
+            action = 'show'
+        })
+        
+        Debug:Log("MENU", "Custom editor opened", {
+            gang = self.playerGang,
+            accessType = self.currentAccess.sprayType,
+            colorsCount = #gangColors,
+            nuiFocus = self.nuiFocusActive
+        }, "INFO")
+    end)
+end
+
+-- ✅ FIX: Template Selector öffnen mit verbesserter Template Loading
+function SprayMenu:OpenTemplateSelector()
+    lib.hideContext()
+    
+    CreateThread(function()
+        Wait(150) -- Delay für smooth transition
+        
+        -- ✅ FIX: Safe NUI activation
+        self:SafeActivateNUI()
+        
+        -- ✅ FIX: Template-Daten vorbereiten
+        local templates = self:GetAvailableTemplates()
+        
+        -- ✅ FIX: Template Selector öffnen
+        SendNUIMessage({
+            type = 'openTemplateSelector',
+            gang = self.playerGang,
+            grade = self.playerGrade,
+            templates = templates,
+            accessType = self.currentAccess.sprayType,
+            visible = true,
+            action = 'show'
+        })
+        
+        Debug:Log("MENU", "Template selector opened", {
+            gang = self.playerGang,
+            accessType = self.currentAccess.sprayType,
+            templatesCount = #templates
+        }, "INFO")
+    end)
+end
+
+-- ✅ FIX: URL Input öffnen mit verbesserter NUI handling
+function SprayMenu:OpenUrlInput()
+    lib.hideContext()
+    
+    CreateThread(function()
+        Wait(150) -- Delay für smooth transition
+        
+        -- ✅ FIX: Safe NUI activation
+        self:SafeActivateNUI()
+        
+        -- ✅ FIX: URL Input öffnen
+        SendNUIMessage({
+            type = 'openUrlInput',
+            gang = self.playerGang,
+            accessType = self.currentAccess.sprayType,
+            visible = true,
+            action = 'show'
+        })
+        
+        Debug:Log("MENU", "URL input opened", {
+            gang = self.playerGang,
+            accessType = self.currentAccess.sprayType
+        }, "INFO")
+    end)
+end
+
+-- ✅ FIX: Player Sprays öffnen mit Server Request
+function SprayMenu:OpenPlayerSprays()
+    lib.hideContext()
+    
+    -- Loading Notification
+    lib.notify({
+        title = 'Meine Sprays',
+        description = 'Lade Spray-Daten...',
+        type = 'info',
+        duration = 2000
+    })
+    
+    -- ✅ FIX: Request player sprays from server
+    TriggerServerEvent('spray:server:getPlayerSprays')
+    
+    Debug:Log("MENU", "Player sprays requested", nil, "INFO")
+end
+
+-- ✅ FIX: Safe NUI activation mit Body Class Management
+function SprayMenu:SafeActivateNUI()
+    -- Ensure clean state first
+    if self.nuiFocusActive then
+        SetNuiFocus(false, false)
+        Wait(100)
+    end
+    
+    -- ✅ FIX: Activate NUI mit beiden Parametern
+    SetNuiFocus(true, true) -- Keyboard + Mouse
+    self.nuiFocusActive = true
+    self.isOpen = false -- Menu ist geschlossen, NUI ist aktiv
+    
+    -- ✅ FIX: Add body class for CSS compatibility
+    SendNUIMessage({
+        type = 'setBodyClass',
+        class = 'nui-focus-active',
+        add = true
+    })
+    
+    Debug:Log("MENU", "NUI safely activated", {
+        focus = true,
+        keyboard = true
+    }, "INFO")
+end
+
+-- ✅ FIX: Safe NUI deactivation mit Body Class Cleanup
+function SprayMenu:SafeDeactivateNUI()
+    SetNuiFocus(false, false)
+    self.nuiFocusActive = false
+    self.overlayPreventionActive = false
+    
+    -- ✅ FIX: Remove body class
+    SendNUIMessage({
+        type = 'setBodyClass',
+        class = 'nui-focus-active',
+        add = false
+    })
+    
+    -- ✅ FIX: Send cleanup message to NUI
+    SendNUIMessage({
+        type = 'closeAll',
+        visible = false,
+        action = 'hide'
+    })
+    
+    Debug:Log("MENU", "NUI safely deactivated", nil, "INFO")
+end
+
+-- ✅ FIX: Force NUI Close für Emergency Cleanup
+function SprayMenu:ForceCloseNUI()
+    SetNuiFocus(false, false)
+    self.nuiFocusActive = false
+    self.isOpen = false
+    self.overlayPreventionActive = false
+    self.isRemovalMode = false
+    
+    -- ✅ FIX: Multiple cleanup messages mit Body Class Cleanup
+    for i = 1, 3 do
+        SendNUIMessage({
+            type = 'closeAll',
+            visible = false,
+            action = 'forceHide'
+        })
+        
+        SendNUIMessage({
+            type = 'setBodyClass',
+            class = 'nui-focus-active',
+            add = false
+        })
+        
+        SendNUIMessage({
+            type = 'setBodyClass', 
+            class = 'nui-modal-open',
+            add = false
+        })
+    end
+    
+    Debug:Log("MENU", "NUI force closed with body class cleanup", nil, "WARN")
+end
+
+-- ✅ FIX: Item-basierte Access-Validierung
 function SprayMenu:ValidateItemAccess()
     -- Prüfe ob Item-basierter Zugriff vorhanden
     if not self.currentAccess or not self.currentAccess.sprayType then
@@ -363,6 +478,14 @@ function SprayMenu:ValidateItemAccess()
             accessType = "public"
         }
     elseif self.currentAccess.sprayType == "gang" then
+        -- Gang-Zugehörigkeit prüfen
+        if not self.playerGang then
+            return {
+                allowed = false,
+                reason = "Du bist in keiner Gang"
+            }
+        end
+        
         return {
             allowed = true,
             reason = "Gang-Zugang erlaubt",
@@ -382,7 +505,7 @@ function SprayMenu:ValidateItemAccess()
     }
 end
 
--- Show access error without overlay
+-- ✅ FIX: Show Access Error ohne overlay
 function SprayMenu:ShowAccessError(reason)
     lib.notify({
         title = 'Spray-System',
@@ -397,263 +520,88 @@ function SprayMenu:ShowAccessError(reason)
     }, "WARN")
 end
 
--- Custom Editor öffnen - Improved NUI handling
-function SprayMenu:OpenCustomEditor()
-    lib.hideContext()
+-- ✅ FIX: Available Templates laden mit Public + Gang Support
+function SprayMenu:GetAvailableTemplates()
+    local templates = {}
     
-    CreateThread(function()
-        Wait(100) -- Delay for smooth transition
-        
-        -- Safe NUI activation
-        self:SafeActivateNUI()
-        
-        -- Gang-Farben vorbereiten
-        local gangColors = self:GetGangColors()
-        
-        -- Editor öffnen
-        SendNUIMessage({
-            type = 'openSprayEditor',
-            gang = self.playerGang,
-            gangColors = gangColors,
-            accessType = self.currentAccess.sprayType,
-            visible = true -- Explicit visibility flag
-        })
-        
-        Debug:Log("MENU", "Custom editor opened", {
-            gang = self.playerGang,
-            accessType = self.currentAccess.sprayType,
-            colors = #gangColors
-        }, "INFO")
-    end)
-end
-
--- Template Selector öffnen - Improved NUI handling  
-function SprayMenu:OpenTemplateSelector()
-    lib.hideContext()
-    
-    CreateThread(function()
-        Wait(100) -- Delay for smooth transition
-        
-        -- Safe NUI activation
-        self:SafeActivateNUI()
-        
-        -- Template-Daten vorbereiten
-        local templates = self:GetAvailableTemplates()
-        
-        -- Template Selector öffnen
-        SendNUIMessage({
-            type = 'openTemplateSelector',
-            gang = self.playerGang,
-            grade = self.playerGrade,
-            templates = templates,
-            accessType = self.currentAccess.sprayType,
-            visible = true -- Explicit visibility flag
-        })
-        
-        Debug:Log("MENU", "Template selector opened", {
-            gang = self.playerGang,
-            accessType = self.currentAccess.sprayType,
-            templates = #templates
-        }, "INFO")
-    end)
-end
-
--- URL Input öffnen - Improved NUI handling
-function SprayMenu:OpenUrlInput()
-    lib.hideContext()
-    
-    CreateThread(function()
-        Wait(100) -- Delay for smooth transition
-        
-        -- Safe NUI activation
-        self:SafeActivateNUI()
-        
-        -- URL Input öffnen
-        SendNUIMessage({
-            type = 'openUrlInput',
-            gang = self.playerGang,
-            accessType = self.currentAccess.sprayType,
-            visible = true -- Explicit visibility flag
-        })
-        
-        Debug:Log("MENU", "URL input opened", {
-            gang = self.playerGang,
-            accessType = self.currentAccess.sprayType
-        }, "INFO")
-    end)
-end
-
--- Safe NUI activation
-function SprayMenu:SafeActivateNUI()
-    -- Ensure clean state first
-    if self.nuiFocusActive then
-        SetNuiFocus(false, false)
-        Wait(50)
-    end
-    
-    -- Activate NUI
-    SetNuiFocus(true, true)
-    self.nuiFocusActive = true
-    self.isOpen = false -- Menu is closed, NUI is active
-    
-    Debug:Log("MENU", "NUI safely activated", nil, "INFO")
-end
-
--- Safe NUI deactivation
-function SprayMenu:SafeDeactivateNUI()
-    SetNuiFocus(false, false)
-    self.nuiFocusActive = false
-    self.overlayPreventionActive = false
-    
-    -- Send cleanup message
-    SendNUIMessage({
-        type = 'closeAll',
-        visible = false
-    })
-    
-    Debug:Log("MENU", "NUI safely deactivated", nil, "INFO")
-end
-
--- ✅ NEU: Entferner-Modus starten
-function SprayMenu:StartRemovalMode()
-    self.isRemovalMode = true
-    
-    lib.notify({
-        title = 'Graffiti-Entferner',
-        description = 'Ziele auf ein Spray und drücke [E] zum Entfernen. [ESC] zum Abbrechen.',
-        type = 'info',
-        duration = 8000
-    })
-    
-    -- Starte Removal-Thread
-    CreateThread(function()
-        local timeout = GetGameTimer() + 30000 -- 30 Sekunden Timeout
-        
-        while self.isRemovalMode and GetGameTimer() < timeout do
-            Wait(0)
-            
-            -- E Key für Entfernung
-            if IsControlJustPressed(0, 38) then -- E Key
-                local success = self:AttemptSprayRemoval()
-                if success then
-                    self.isRemovalMode = false
-                    break
-                end
-            end
-            
-            -- ESC zum Abbrechen
-            if IsControlJustPressed(0, 177) then -- ESC
-                self.isRemovalMode = false
-                lib.notify({
-                    title = 'Graffiti-Entferner',
-                    description = 'Entferner-Modus abgebrochen',
-                    type = 'info'
-                })
-                break
-            end
-            
-            -- Visual Feedback (optional)
-            if Config.Debug.enabled then
-                local playerCoords = GetEntityCoords(PlayerPedId())
-                DrawMarker(1, playerCoords.x, playerCoords.y, playerCoords.z - 1.0, 
-                    0, 0, 0, 0, 0, 0, 
-                    2.0, 2.0, 0.5, 
-                    255, 0, 0, 100, 
-                    false, false, 2, false, nil, nil, false)
-            end
-        end
-        
-        if GetGameTimer() >= timeout then
-            self.isRemovalMode = false
-            lib.notify({
-                title = 'Graffiti-Entferner',
-                description = 'Entferner-Modus Timeout',
-                type = 'warning'
+    -- ✅ FIX: Public Templates für alle (IMMER verfügbar, Priorität 1)
+    if Config.Gangs.PublicTemplates then
+        for templateId, templateConfig in pairs(Config.Gangs.PublicTemplates) do
+            table.insert(templates, {
+                id = templateId,
+                name = templateConfig.name,
+                description = templateConfig.description,
+                filePath = templateConfig.filePath,
+                category = "public",
+                requiredGrade = 0,
+                isPublic = true,
+                available = true,
+                priority = templateConfig.priority or 1
             })
         end
-    end)
-end
-
--- ✅ NEU: Spray-Entfernung versuchen
-function SprayMenu:AttemptSprayRemoval()
-    local playerCoords = GetEntityCoords(PlayerPedId())
-    local nearbySpray = nil
-    local closestDistance = (self.removalMetadata and self.removalMetadata.range) or 5.0
+    end
     
-    -- Suche naheliegendstes Spray
-    if SprayCache and SprayCache.nearby then
-        for sprayId, sprayInfo in pairs(SprayCache.nearby) do
-            local distance = #(playerCoords - sprayInfo.data.coords)
-            
-            if distance < closestDistance then
-                nearbySpray = sprayId
-                closestDistance = distance
+    -- ✅ FIX: Gang Templates nur für Gang-Mitglieder (falls Gang-Access)
+    if self.currentAccess and self.currentAccess.sprayType == "gang" and self.playerGang then
+        local gangConfig = Config.Gangs.AllowedGangs[self.playerGang]
+        
+        if gangConfig and gangConfig.templates then
+            for templateId, templateConfig in pairs(gangConfig.templates) do
+                local isAvailable = self.playerGrade >= (templateConfig.requiredGrade or 0)
+                
+                table.insert(templates, {
+                    id = templateId,
+                    name = templateConfig.name,
+                    description = templateConfig.description,
+                    filePath = templateConfig.filePath,
+                    category = templateConfig.category or "gang",
+                    requiredGrade = templateConfig.requiredGrade or 0,
+                    isPublic = false,
+                    available = isAvailable,
+                    priority = templateConfig.priority or 2
+                })
+            end
+        end
+        
+        -- ✅ FIX: Global Gang Templates
+        if Config.Gangs.GlobalTemplates then
+            for templateId, templateConfig in pairs(Config.Gangs.GlobalTemplates) do
+                local isAvailable = self.playerGrade >= (templateConfig.requiredGrade or 0)
+                
+                table.insert(templates, {
+                    id = templateId,
+                    name = templateConfig.name,
+                    description = templateConfig.description,
+                    filePath = templateConfig.filePath,
+                    category = templateConfig.category or "global",
+                    requiredGrade = templateConfig.requiredGrade or 0,
+                    isPublic = false,
+                    available = isAvailable,
+                    priority = templateConfig.priority or 3
+                })
             end
         end
     end
     
-    if not nearbySpray then
-        lib.notify({
-            title = 'Graffiti-Entferner',
-            description = string.format('Kein Spray in %.1fm Reichweite gefunden', closestDistance),
-            type = 'error'
-        })
-        return false
-    end
+    -- ✅ FIX: Templates nach Priorität sortieren
+    table.sort(templates, function(a, b)
+        if a.priority ~= b.priority then
+            return a.priority < b.priority
+        end
+        return a.name < b.name
+    end)
     
-    -- Progress Bar für Entfernung
-    local progressTime = 3000
-    local success = lib.progressBar({
-        duration = progressTime,
-        label = 'Graffiti wird entfernt...',
-        useWhileDead = false,
-        canCancel = true,
-        disable = {
-            car = true,
-            move = true,
-            combat = true
-        },
-        anim = {
-            dict = 'amb@world_human_maid_clean@',
-            clip = 'base'
-        }
-    })
+    Debug:Log("MENU", "Templates loaded", {
+        totalCount = #templates,
+        publicCount = self:CountTemplatesByType(templates, true),
+        gangCount = self:CountTemplatesByType(templates, false),
+        accessType = self.currentAccess.sprayType
+    }, "INFO")
     
-    if success then
-        -- Sende Entfernungsanfrage an Server (mit Item-Flag)
-        TriggerServerEvent('spray:server:removeSprayWithItem', nearbySpray)
-        
-        Debug:Log("MENU", "Spray removal attempted with item", {
-            sprayId = nearbySpray,
-            distance = closestDistance
-        }, "INFO")
-        
-        return true
-    else
-        lib.notify({
-            title = 'Graffiti-Entferner',
-            description = 'Entfernung abgebrochen',
-            type = 'warning'
-        })
-    end
-    
-    return false
+    return templates
 end
 
--- Player Sprays anzeigen
-function SprayMenu:OpenPlayerSprays()
-    -- Request player sprays from server
-    TriggerServerEvent('spray:server:getPlayerSprays')
-    
-    lib.notify({
-        title = 'Meine Sprays',
-        description = 'Lade Spray-Daten...',
-        type = 'info',
-        duration = 2000
-    })
-end
-
--- ✅ NEU: Player Sprays Menu anzeigen
+-- ✅ FIX: Player Sprays Menu anzeigen
 function SprayMenu:ShowPlayerSpraysMenu(sprays)
     if not sprays or #sprays == 0 then
         lib.notify({
@@ -692,7 +640,7 @@ function SprayMenu:ShowPlayerSpraysMenu(sprays)
         title = '← Zurück',
         icon = 'arrow-left',
         onSelect = function()
-            self:OpenMainMenu()
+            self:OpenMainMenu(self.currentAccess)
         end
     })
     
@@ -708,23 +656,21 @@ function SprayMenu:ShowPlayerSpraysMenu(sprays)
     })
     
     lib.showContext('spray_player_sprays')
+    
+    Debug:Log("MENU", "Player sprays menu shown", {
+        sprayCount = #sprays
+    }, "INFO")
 end
 
--- Spray-Optionen anzeigen
+-- ✅ FIX: Spray Options anzeigen
 function SprayMenu:ShowSprayOptions(spray)
     local options = {
         {
             title = '📍 Zu Spray teleportieren',
-            description = 'Teleportiere dich zu diesem Spray',
-            icon = 'map-marker-alt',
+            description = 'Teleportiert dich zu diesem Spray',
+            icon = 'map-marker',
             onSelect = function()
-                local coords = vector3(spray.position.x, spray.position.y, spray.position.z)
-                SetEntityCoords(PlayerPedId(), coords.x, coords.y, coords.z)
-                lib.notify({
-                    title = 'Teleport',
-                    description = 'Du wurdest zum Spray teleportiert',
-                    type = 'success'
-                })
+                self:TeleportToSpray(spray)
             end
         },
         {
@@ -732,23 +678,22 @@ function SprayMenu:ShowSprayOptions(spray)
             description = 'Lösche dieses Spray permanent',
             icon = 'trash',
             onSelect = function()
-                self:ConfirmSprayDeletion(spray)
+                self:ConfirmDeleteSpray(spray)
             end
         },
         {
-            title = '← Zurück zu Sprays',
+            title = '← Zurück',
             icon = 'arrow-left',
             onSelect = function()
-                self:OpenPlayerSprays()
+                -- Zurück zur Player Sprays Liste
+                TriggerServerEvent('spray:server:getPlayerSprays')
             end
         }
     }
     
-    local sprayType = spray.gang_name == "public" and "Öffentlich" or spray.gang_name
-    
     lib.registerContext({
         id = 'spray_options',
-        title = string.format('Spray #%s (%s)', spray.spray_id:sub(1, 8), sprayType),
+        title = 'Spray #' .. spray.spray_id:sub(1, 8),
         canClose = true,
         options = options,
         onExit = function()
@@ -760,60 +705,42 @@ function SprayMenu:ShowSprayOptions(spray)
     lib.showContext('spray_options')
 end
 
--- Spray-Löschung bestätigen
-function SprayMenu:ConfirmSprayDeletion(spray)
-    local sprayType = spray.gang_name == "public" and "öffentliche" or "Gang-"
-    
-    local alert = lib.alertDialog({
-        header = 'Spray löschen',
-        content = string.format('Möchtest du dieses %s Spray wirklich permanent löschen?', sprayType),
-        centered = true,
-        cancel = true
-    })
-    
-    if alert == 'confirm' then
-        TriggerServerEvent('spray:server:removeSpray', spray.spray_id, 'owner_delete', false)
-        
-        lib.notify({
-            title = 'Spray gelöscht',
-            description = 'Das Spray wurde erfolgreich gelöscht',
-            type = 'success'
-        })
-        
-        -- Zurück zur Spray-Liste
-        self:OpenPlayerSprays()
-    end
-end
-
--- Admin Panel (verkürzt für Platzbedarf)
+-- ✅ FIX: Admin Panel
 function SprayMenu:OpenAdminPanel()
-    if not self:IsPlayerAdmin() then return end
-    
     local options = {
         {
-            title = '📊 System-Statistiken',
+            title = '📊 System Statistiken',
             description = 'Zeige Spray-System Statistiken',
             icon = 'chart-bar',
             onSelect = function()
-                self:ShowSystemStats()
+                TriggerServerEvent('spray:server:requestSystemStats')
             end
         },
         {
-            title = '🧹 System-Cleanup',
-            description = 'Räume abgelaufene Sprays auf',
-            icon = 'broom',
+            title = '🧹 Abgelaufene Sprays löschen',
+            description = 'Lösche alle abgelaufenen Sprays',
+            icon = 'clock',
             onSelect = function()
-                TriggerServerEvent('spray:server:adminCleanup')
+                local alert = lib.alertDialog({
+                    header = 'Abgelaufene Sprays löschen',
+                    content = 'Möchtest du alle abgelaufenen Sprays löschen?',
+                    centered = true,
+                    cancel = true
+                })
+                
+                if alert == 'confirm' then
+                    TriggerServerEvent('spray:server:adminCleanupExpired')
+                end
             end
         },
         {
             title = '🗑️ Public Sprays löschen',
             description = 'Lösche alle öffentlichen Sprays',
-            icon = 'user-times',
+            icon = 'users',
             onSelect = function()
                 local alert = lib.alertDialog({
                     header = 'Public Sprays löschen',
-                    content = 'Alle öffentlichen Sprays permanent löschen?',
+                    content = 'Möchtest du ALLE öffentlichen Sprays löschen?',
                     centered = true,
                     cancel = true
                 })
@@ -835,7 +762,7 @@ function SprayMenu:OpenAdminPanel()
             title = '← Zurück',
             icon = 'arrow-left',
             onSelect = function()
-                self:OpenMainMenu()
+                self:OpenMainMenu(self.currentAccess)
             end
         }
     }
@@ -854,67 +781,9 @@ function SprayMenu:OpenAdminPanel()
     lib.showContext('spray_admin_panel')
 end
 
--- ✅ ERWEITERT: Template-Loading für Public + Gang Support
-function SprayMenu:GetAvailableTemplates()
-    local templates = {}
-    
-    -- ✅ Public Templates für alle (IMMER verfügbar, Priorität 1)
-    if Config.Gangs.PublicTemplates then
-        for templateId, templateConfig in pairs(Config.Gangs.PublicTemplates) do
-            table.insert(templates, {
-                id = templateId,
-                name = templateConfig.name,
-                description = templateConfig.description,
-                filePath = templateConfig.filePath,
-                category = "public",
-                requiredGrade = 0,
-                isPublic = true,
-                available = true,
-                priority = templateConfig.priority or 1
-            })
-        end
-    end
-    
-    -- Gang Templates nur für Gang-Mitglieder (falls Gang-Access)
-    if self.currentAccess and self.currentAccess.sprayType == "gang" and self.playerGang then
-        local gangConfig = Config.Gangs.AllowedGangs[self.playerGang]
-        
-        if gangConfig and gangConfig.templates then
-            for _, templateId in ipairs(gangConfig.templates) do
-                local templateConfig = Config.Gangs.Templates[templateId]
-                if templateConfig then
-                    table.insert(templates, {
-                        id = templateId,
-                        name = templateConfig.name,
-                        description = templateConfig.description,
-                        filePath = templateConfig.filePath,
-                        category = "gang",
-                        requiredGrade = templateConfig.requiredGrade or 0,
-                        isPublic = false,
-                        available = self.playerGrade >= (templateConfig.requiredGrade or 0),
-                        priority = 100 + (templateConfig.requiredGrade or 0)
-                    })
-                end
-            end
-        end
-    end
-    
-    -- Sortiere nach Priorität (Public Templates zuerst)
-    table.sort(templates, function(a, b) 
-        return a.priority < b.priority 
-    end)
-    
-    Debug:Log("MENU", "Templates loaded", {
-        totalTemplates = #templates,
-        publicTemplates = self:CountTemplatesByType(templates, true),
-        gangTemplates = self:CountTemplatesByType(templates, false),
-        accessType = self.currentAccess.sprayType
-    }, "INFO")
-    
-    return templates
-end
+-- ✅ UTILITY FUNCTIONS
 
--- Helper: Zähle Templates nach Typ
+-- Zähle Templates nach Typ
 function SprayMenu:CountTemplatesByType(templates, isPublic)
     local count = 0
     for _, template in ipairs(templates) do
@@ -927,7 +796,6 @@ end
 
 -- Utility Functions
 function SprayMenu:CanUseSpraySystem()
-    -- Ersetzt durch Item-basierte Validierung
     return self.currentAccess and self.currentAccess.sprayType ~= nil
 end
 
@@ -939,20 +807,88 @@ function SprayMenu:IsPlayerAdmin()
 end
 
 function SprayMenu:GetGangColors()
-    -- ✅ Public Access: Standard-Farben
+    -- ✅ FIX: Public Access: Standard-Farben
     if self.currentAccess.sprayType == "public" then
-        return {'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'} -- Regenbogen-Farben
+        return {'#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'}
     end
     
     -- Gang Access: Gang-spezifische Farben
     if not self.playerGang or not Config.Gangs.AllowedGangs[self.playerGang] then
-        return {'#FF0000', '#00FF00', '#0000FF'} -- Default colors
+        return {'#FF0000', '#00FF00', '#0000FF'}
     end
     
     return Config.Gangs.AllowedGangs[self.playerGang].primaryColors or {'#FF0000'}
 end
 
--- Confirm Full Cleanup (für Admin Panel)
+-- ✅ FIX: Performance Monitoring
+function SprayMenu:StartPerformanceMonitoring()
+    CreateThread(function()
+        while true do
+            Wait(30000) -- Alle 30 Sekunden
+            
+            if self.nuiFocusActive and not self.isRemovalMode then
+                local memUsage = collectgarbage("count")
+                
+                if memUsage > 50000 then -- > 50MB
+                    Debug:Log("MENU", "High memory usage detected", {
+                        memUsage = memUsage
+                    }, "WARN")
+                    
+                    self.performanceMode = true
+                    collectgarbage("collect")
+                end
+            end
+        end
+    end)
+end
+
+-- ✅ FIX: Teleport zu Spray
+function SprayMenu:TeleportToSpray(spray)
+    if spray and spray.position then
+        SetEntityCoords(PlayerPedId(), spray.position.x, spray.position.y, spray.position.z + 1.0, false, false, false, true)
+        
+        lib.notify({
+            title = 'Teleportiert',
+            description = 'Du wurdest zu deinem Spray teleportiert',
+            type = 'success'
+        })
+        
+        Debug:Log("MENU", "Player teleported to spray", {
+            sprayId = spray.spray_id:sub(1, 8),
+            position = spray.position
+        }, "INFO")
+    end
+end
+
+-- ✅ FIX: Spray löschen bestätigen
+function SprayMenu:ConfirmDeleteSpray(spray)
+    local alert = lib.alertDialog({
+        header = 'Spray löschen',
+        content = 'Möchtest du dieses Spray wirklich permanent löschen?',
+        centered = true,
+        cancel = true
+    })
+    
+    if alert == 'confirm' then
+        TriggerServerEvent('spray:server:removeSpray', spray.spray_id, "Player deletion", false)
+        
+        lib.notify({
+            title = 'Spray gelöscht',
+            description = 'Dein Spray wurde erfolgreich gelöscht',
+            type = 'success'
+        })
+        
+        Debug:Log("MENU", "Spray deletion confirmed", {
+            sprayId = spray.spray_id:sub(1, 8)
+        }, "INFO")
+        
+        -- Zurück zur Liste
+        Wait(1000)
+        TriggerServerEvent('spray:server:getPlayerSprays')
+    end
+end
+
+-- Full Cleanup bestätigen
 function SprayMenu:ConfirmFullCleanup()
     local alert = lib.alertDialog({
         header = '⚠️ WARNUNG: Alle Sprays löschen',
@@ -972,36 +908,7 @@ function SprayMenu:ConfirmFullCleanup()
     end
 end
 
--- Show System Stats (für Admin Panel)
-function SprayMenu:ShowSystemStats()
-    TriggerServerEvent('spray:server:requestSystemStats')
-end
-
--- NUI Callbacks - Enhanced callback handling
-RegisterNUICallback('closeEditor', function(data, cb)
-    SprayMenu:SafeDeactivateNUI()
-    cb('ok')
-end)
-
-RegisterNUICallback('saveSprayDesign', function(data, cb)
-    SprayMenu:SafeDeactivateNUI()
-    TriggerServerEvent('spray:server:saveSprayDesign', data)
-    cb('ok')
-end)
-
-RegisterNUICallback('useTemplate', function(data, cb)
-    SprayMenu:SafeDeactivateNUI()
-    TriggerServerEvent('spray:server:useTemplate', data)
-    cb('ok')
-end)
-
-RegisterNUICallback('useUrlImage', function(data, cb)
-    SprayMenu:SafeDeactivateNUI()
-    TriggerServerEvent('spray:server:useUrlImage', data)
-    cb('ok')
-end)
-
--- ESC Key Handler - Enhanced ESC handling
+-- ✅ FIX: Enhanced ESC Key Handler
 CreateThread(function()
     while true do
         Wait(0)
@@ -1025,7 +932,7 @@ CreateThread(function()
     end
 end)
 
--- Cleanup beim Resource-Stop - Enhanced cleanup
+-- ✅ FIX: Cleanup beim Resource-Stop
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName == GetCurrentResourceName() then
         if SprayMenu.isOpen then
@@ -1039,7 +946,7 @@ AddEventHandler('onResourceStop', function(resourceName)
     end
 end)
 
--- Initialisierung
+-- ✅ FIX: Initialisierung mit Delay
 CreateThread(function()
     Wait(2000) -- Warte bis alle anderen Systeme geladen sind
     SprayMenu:Initialize()

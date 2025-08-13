@@ -1,4 +1,4 @@
--- FiveM Gang Spray System
+-- ✅ UPDATED: FiveM Gang Spray System
 -- Advanced DUI-based Graffiti System with QB-Core Integration
 fx_version 'cerulean'
 game 'gta5'
@@ -7,7 +7,7 @@ use_fxv2_oal 'yes'
 
 author 'Gang Spray Development Team'
 description 'Advanced Gang Spray System with Paint Editor'
-version '1.0.0'
+version '1.0.1'
 
 -- Kritische Dependencies in korrekter Ladereihenfolge
 dependencies {
@@ -16,13 +16,14 @@ dependencies {
     'ox_lib'            -- UI Library (Essential)
 }
 
--- Shared Scripts - Ox-lib MUSS zuerst geladen werden
+-- Shared Scripts - REIHENFOLGE IST KRITISCH!
 shared_scripts {
     '@ox_lib/init.lua',               -- Ox-lib Initialisierung (KRITISCH: Erste Zeile!)
     '@qb-core/shared/locale.lua',     -- QB-Core Locale System
-    'config/main.lua',                -- Main Config zuerst
+    'shared/debug.lua',               -- ✅ FIX: Debug System ZUERST laden
+    'config/main.lua',                -- Main Config nach Debug
     'config/gangs.lua',               -- Gang Config danach
-    'shared/debug.lua'                -- Debug System
+    'config/items.lua'                -- Item Config zuletzt
 }
 
 -- Client Scripts mit optimierter Ladereihenfolge
@@ -38,7 +39,8 @@ client_scripts {
 -- Server Scripts mit Database-Integration
 server_scripts {
     'server/core/init.lua',           -- Server Core Init
-    'server/database/schema.lua',     -- Database Schema
+    'server/database/schema.lua',     -- ✅ ORIGINAL: Database Schema
+    'server/database/schema_fix.lua', -- ✅ NEU: Schema Migration Fix
     'server/permissions/gang_handler.lua',  -- Gang Permission System
     'server/spray/main.lua'           -- Main Server Logic
 }

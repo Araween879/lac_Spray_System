@@ -13,10 +13,39 @@
     
     <!-- Fabric.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+    
+    <!-- ✅ FIX: Inline CSS um SOFORTIGES Verstecken zu garantieren -->
+    <style>
+        /* BULLETPROOF HIDE - Alle UI-Elemente sofort verstecken */
+        .modal, #template-selector, #url-input-modal, #spray-editor, #error-modal, #loading-overlay, .notification, .performance-overlay {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            z-index: -9999 !important;
+        }
+        
+        /* Verhindere automatische Fullscreen-Overlays */
+        body.auto-prevent {
+            overflow: hidden;
+        }
+        
+        body.auto-prevent::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: transparent;
+            z-index: -9998;
+            pointer-events: none;
+        }
+    </style>
 </head>
-<body>
-    <!-- Template Selector Modal -->
-    <div id="template-selector" class="modal hidden">
+<body class="auto-prevent">
+    <!-- ✅ FIX: Template Selector Modal - GARANTIERT VERSTECKT -->
+    <div id="template-selector" class="modal hidden" style="display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; z-index: -9999 !important;">
         <div class="modal-content" style="max-width: 900px;">
             <div class="modal-header">
                 <h2><i class="fas fa-images"></i> Template auswählen</h2>
@@ -58,8 +87,8 @@
         </div>
     </div>
 
-    <!-- URL Input Modal -->
-    <div id="url-input-modal" class="modal hidden">
+    <!-- ✅ FIX: URL Input Modal - GARANTIERT VERSTECKT -->
+    <div id="url-input-modal" class="modal hidden" style="display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; z-index: -9999 !important;">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h2><i class="fas fa-link"></i> Bild von URL laden</h2>
@@ -98,8 +127,8 @@
         </div>
     </div>
 
-    <!-- Paint Editor -->
-    <div id="spray-editor" class="hidden">
+    <!-- ✅ FIX: Paint Editor - GARANTIERT VERSTECKT -->
+    <div id="spray-editor" class="hidden" style="display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; z-index: -9999 !important;">
         <div class="editor-container">
             <!-- Canvas Container -->
             <div class="canvas-container">
@@ -232,8 +261,8 @@
         </div>
     </div>
 
-    <!-- Error Modal -->
-    <div id="error-modal" class="modal hidden">
+    <!-- ✅ FIX: Error Modal - GARANTIERT VERSTECKT -->
+    <div id="error-modal" class="modal hidden" style="display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; z-index: -9999 !important;">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header error">
                 <h2><i class="fas fa-exclamation-triangle"></i> Fehler</h2>
@@ -263,23 +292,63 @@
         </div>
     </div>
 
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="hidden">
+    <!-- ✅ FIX: Loading Overlay - GARANTIERT VERSTECKT -->
+    <div id="loading-overlay" class="hidden" style="display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; z-index: -9999 !important;">
         <div class="loading-spinner">
             <i class="fas fa-spinner fa-spin"></i>
             <p>Lädt...</p>
         </div>
     </div>
 
-    <!-- Notification -->
-    <div id="notification" class="notification hidden">
+    <!-- ✅ FIX: Notification - GARANTIERT VERSTECKT -->
+    <div id="notification" class="notification hidden" style="display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; z-index: -9999 !important;">
         <i class="fas fa-check-circle"></i>
         <span id="notification-text">Aktion erfolgreich!</span>
     </div>
 
-    <!-- JavaScript Files -->
+    <!-- ✅ FIX: JavaScript Files mit Anti-Auto-Open Script -->
+    <script>
+        // ✅ FIX: SOFORTIGES Script um alle UI zu verstecken
+        (function() {
+            // Alle potentiellen UI-Elemente sofort verstecken
+            const hideElements = [
+                'template-selector', 'url-input-modal', 'spray-editor', 
+                'error-modal', 'loading-overlay', 'notification'
+            ];
+            
+            hideElements.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.classList.add('hidden');
+                    el.style.cssText = 'display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; z-index: -9999 !important;';
+                }
+            });
+            
+            // Body Class Management
+            document.body.classList.remove('nui-modal-open', 'nui-focus-active');
+            
+            console.log('[HTML] Immediate UI hide script executed');
+        })();
+    </script>
+    
     <script src="js/spray-editor.js"></script>
     <script src="js/template-manager.js"></script>
     <script src="js/performance-monitor.js"></script>
+    
+    <script>
+        // ✅ FIX: Finaler Sicherheitscheck nach dem Laden aller Scripts
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                // Nochmals alle UI-Elemente verstecken als finale Sicherheit
+                document.querySelectorAll('.modal, #spray-editor, .overlay, .performance-overlay, .notification').forEach(el => {
+                    el.classList.add('hidden');
+                    el.style.cssText = 'display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; z-index: -9999 !important;';
+                });
+                
+                document.body.classList.remove('nui-modal-open', 'nui-focus-active');
+                console.log('[HTML] Final UI hide check completed');
+            }, 100);
+        });
+    </script>
 </body>
 </html>

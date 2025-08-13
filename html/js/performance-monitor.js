@@ -1,9 +1,5 @@
-// =======================================
-// 📄 FILE: html/js/performance-monitor.js
-// 🔌 STEP: STEP 2 — PERFORMANCE MONITORING
-// Fixed undefined references and memory monitoring
-// VERSION: 1.0.0
-// =======================================
+// ✅ GEFIXT: Performance Monitor - Auto-Open Prevention Fix
+// Datei: html/js/performance-monitor.js
 
 class PerformanceMonitor {
     constructor() {
@@ -25,24 +21,35 @@ class PerformanceMonitor {
         this.updateInterval = 1000; // 1 second
         this.isVisible = false;
         
+        // ✅ FIX: Auto-Open Prevention
+        this.preventAutoOpen = true;
+        this.allowedToOpen = false;
+        
         this.init();
     }
     
     init() {
-        this.createOverlay();
+        // ✅ FIX: OHNE automatisches Overlay erstellen
+        this.setupKeyBindings();
         this.startMonitoring();
         
-        // Toggle mit Ctrl+P
+        console.log('[PerformanceMonitor] Initialized (UI remains closed)');
+    }
+    
+    // ✅ FIX: Nur Key Bindings ohne UI zu erstellen
+    setupKeyBindings() {
+        // Toggle mit Ctrl+P - NUR wenn explizit aktiviert
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 'p') {
                 e.preventDefault();
-                this.toggle();
+                if (!this.preventAutoOpen) {
+                    this.toggle();
+                }
             }
         });
-        
-        console.log('[PerformanceMonitor] Initialized');
     }
     
+    // ✅ FIX: Overlay NUR erstellen wenn explizit angefordert
     createOverlay() {
         // Prüfe ob Overlay bereits existiert
         if (document.getElementById('performance-overlay')) return;
@@ -106,6 +113,8 @@ class PerformanceMonitor {
         
         // Chart initialisieren
         this.initChart();
+        
+        console.log('[PerformanceMonitor] Overlay created');
     }
     
     initChart() {
@@ -156,7 +165,7 @@ class PerformanceMonitor {
         }
         
         // Canvas Objects Count
-        if (window.sprayEditor && window.sprayEditor.canvas) {
+        if (window.sprayEditor && window.sprayEditor.canvas && window.sprayEditor.allowedToOpen) {
             this.metrics.canvasObjects = window.sprayEditor.canvas.getObjects().length;
         } else {
             this.metrics.canvasObjects = 0;
@@ -165,8 +174,8 @@ class PerformanceMonitor {
         // Render Time Measurement
         const renderStart = performance.now();
         
-        // Simulate render operation
-        if (window.sprayEditor && window.sprayEditor.canvas) {
+        // Simulate render operation - NUR wenn Editor offen ist
+        if (window.sprayEditor && window.sprayEditor.canvas && window.sprayEditor.allowedToOpen) {
             window.sprayEditor.canvas.renderAll();
         }
         
@@ -285,7 +294,18 @@ class PerformanceMonitor {
         }
     }
     
+    // ✅ FIX: Toggle NUR erlauben wenn nicht in prevent mode
     toggle() {
+        if (this.preventAutoOpen) {
+            console.log('[PerformanceMonitor] Toggle blocked - auto-open prevention active');
+            return;
+        }
+        
+        // ✅ FIX: Overlay erst bei erstem Toggle erstellen
+        if (!document.getElementById('performance-overlay')) {
+            this.createOverlay();
+        }
+        
         this.isVisible = !this.isVisible;
         const overlay = document.getElementById('performance-overlay');
         
@@ -296,6 +316,26 @@ class PerformanceMonitor {
                 overlay.classList.add('hidden');
             }
         }
+    }
+    
+    // ✅ FIX: Explizite Enable Funktion
+    enableToggle() {
+        this.preventAutoOpen = false;
+        this.allowedToOpen = true;
+        console.log('[PerformanceMonitor] Toggle enabled');
+    }
+    
+    // ✅ FIX: Explizite Disable Funktion
+    disableToggle() {
+        this.preventAutoOpen = true;
+        this.allowedToOpen = false;
+        
+        // Overlay verstecken falls offen
+        if (this.isVisible) {
+            this.toggle();
+        }
+        
+        console.log('[PerformanceMonitor] Toggle disabled');
     }
     
     reset() {
@@ -317,7 +357,7 @@ class PerformanceMonitor {
     }
     
     optimizeCanvas() {
-        if (window.sprayEditor && window.sprayEditor.canvas) {
+        if (window.sprayEditor && window.sprayEditor.canvas && window.sprayEditor.allowedToOpen) {
             // Canvas optimization
             const canvas = window.sprayEditor.canvas;
             
@@ -389,9 +429,9 @@ class PerformanceMonitor {
     }
 }
 
-// Global Functions
+// ✅ FIX: Global Functions mit Sicherheitsprüfung
 function clearCanvas() {
-    if (window.sprayEditor && window.sprayEditor.canvas) {
+    if (window.sprayEditor && window.sprayEditor.canvas && window.sprayEditor.allowedToOpen) {
         window.sprayEditor.clearCanvas();
     }
 }
@@ -408,7 +448,7 @@ function exportPerformanceData() {
     }
 }
 
-// CSS für Performance Overlay
+// ✅ FIX: CSS für Performance Overlay - VERSTECKT als Standard
 const performanceCSS = `
 .performance-overlay {
     position: fixed;
@@ -422,6 +462,19 @@ const performanceCSS = `
     z-index: 1000;
     font-size: 12px;
     color: var(--text-primary, #fff);
+    
+    /* ✅ FIX: STANDARDMÄSSIG VERSTECKT */
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.performance-overlay:not(.hidden) {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
 }
 
 .performance-header {
@@ -506,7 +559,7 @@ const style = document.createElement('style');
 style.textContent = performanceCSS;
 document.head.appendChild(style);
 
-// Global Instance erstellen
+// ✅ FIX: Global Instance erstellen OHNE Auto-Open
 window.performanceMonitor = new PerformanceMonitor();
 
-console.log('[PerformanceMonitor] Script loaded successfully');
+console.log('[PerformanceMonitor] Script loaded successfully (UI remains closed)');
